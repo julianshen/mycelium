@@ -1,0 +1,9 @@
+id: resource-alert
+name: High Resource Usage Alert
+namespaces: ["prod"]
+object_type: Resource
+event_type: resource.updated
+criteria: event.payload.after.usage > 90
+enabled: true
+action: alert
+description: Alerts when resource usage exceeds 90% 

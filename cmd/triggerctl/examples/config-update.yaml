@@ -1,0 +1,9 @@
+id: config-update
+name: Config Update Notification
+namespaces: ["default"]
+object_type: Config
+event_type: config.updated
+criteria: event.payload.after.critical == true
+enabled: true
+action: notify
+description: Notifies when a critical config is updated 

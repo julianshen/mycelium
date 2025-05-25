@@ -1,0 +1,9 @@
+id: role-change
+name: User Role Change Detection
+namespaces: ["*"]
+object_type: User
+event_type: user.updated
+criteria: event.payload.before.role != event.payload.after.role
+enabled: true
+action: audit
+description: Detects when a user's role is changed 
