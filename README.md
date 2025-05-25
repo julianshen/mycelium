@@ -1,5 +1,12 @@
 # Mycelium
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/julianshen/mycelium)](https://goreportcard.com/report/github.com/julianshen/mycelium)
+[![GoDoc](https://godoc.org/github.com/julianshen/mycelium?status.svg)](https://godoc.org/github.com/julianshen/mycelium)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Go Version](https://img.shields.io/badge/Go-1.21+-blue.svg)](go.mod)
+[![Build Status](https://github.com/julianshen/mycelium/actions/workflows/build.yml/badge.svg)](https://github.com/julianshen/mycelium/actions/workflows/build.yml)
+[![codecov](https://codecov.io/gh/julianshen/mycelium/branch/main/graph/badge.svg)](https://codecov.io/gh/julianshen/mycelium)
+
 A distributed event processing system with NATS integration, supporting event triggers and actions.
 
 ## Overview
