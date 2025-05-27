@@ -3,11 +3,11 @@ package trigger
 import (
 	"errors"
 	"fmt"
-	"mycelium/internal/event"
 	"regexp"
 	"strings"
 
 	"github.com/expr-lang/expr"
+	cloudevents "github.com/cloudevents/sdk-go/v2"
 )
 
 var (
@@ -46,16 +46,16 @@ func isNamespaceMatch(trigger *Trigger, eventNamespace string) bool {
 // Example: event.event_type == "user.created" && event.payload.after.role == "admin"
 //
 // See the event system specification for more details on the expression language.
-func MatchTrigger(trigger *Trigger, event *event.Event) (bool, error) {
+func MatchTrigger(trigger *Trigger, event *cloudevents.Event) (bool, error) {
 	if trigger == nil || !trigger.Enabled {
 		return false, nil
 	}
 
 	// If criteria is empty, match based on event type and namespace
 	if trigger.Criteria == "" {
-		return (trigger.EventType == "" || trigger.EventType == event.EventType) &&
-			isNamespaceMatch(trigger, event.Namespace) &&
-			(trigger.ObjectType == "" || trigger.ObjectType == event.ObjectType), nil
+		return (trigger.EventType == "" || trigger.EventType == event.Type()) &&
+			isNamespaceMatch(trigger, event.Source()) &&
+			(trigger.ObjectType == "" || trigger.ObjectType == ""), nil
 	}
 
 	// If the trigger has a criteria expression, evaluate it
@@ -96,8 +96,26 @@ func has(args ...any) (any, error) {
 	return true, nil
 }
 
+// Extract extensions
+func extractExtensions(event *cloudevents.Event) (string, string, string, string) {
+	actorType, _ := event.Extensions()["actor_type"].(string)
+	actorID, _ := event.Extensions()["actor_id"].(string)
+	contextRequestID, _ := event.Extensions()["context_request_id"].(string)
+	contextTraceID, _ := event.Extensions()["context_trace_id"].(string)
+	return actorType, actorID, contextRequestID, contextTraceID
+}
+
+// Extract payload from Data
+func extractPayload(event *cloudevents.Event) (map[string]interface{}, error) {
+	var payload map[string]interface{}
+	if err := event.DataAs(&payload); err != nil {
+		payload = map[string]interface{}{}
+	}
+	return payload, nil
+}
+
 // EvaluateTriggerCriteria safely evaluates a criteria string against the given event
-func evaluateTriggerCriteria(event *event.Event, criteria string) (bool, error) {
+func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, error) {
 	// If criteria is empty, match based on event type and namespace
 	if criteria == "" {
 		// For empty criteria, we'll just return true since we don't have trigger information here
@@ -105,32 +123,43 @@ func evaluateTriggerCriteria(event *event.Event, criteria string) (bool, error) 
 		return true, nil
 	}
 
+	// Extract extensions
+	actorType, actorID, contextRequestID, contextTraceID := extractExtensions(event)
+
+	// Extract payload from Data
+	payload, err := extractPayload(event)
+	if err != nil {
+		return false, fmt.Errorf("failed to extract payload: %w", err)
+	}
+
+	// Only include 'before' and 'after' if present
+	payloadMap := map[string]interface{}{}
+	if before, ok := payload["before"]; ok {
+		payloadMap["before"] = before
+	}
+	if after, ok := payload["after"]; ok {
+		payloadMap["after"] = after
+	}
+
 	// Create a map representation of the event that matches JSON field names
 	eventMap := map[string]interface{}{
-		"event_id":      event.EventID,
-		"event_type":    event.EventType,
-		"event_version": event.EventVersion,
-		"namespace":     event.Namespace,
-		"object_type":   event.ObjectType,
-		"object_id":     event.ObjectID,
-		"timestamp":     event.Timestamp,
+		"event_id":      event.ID(),
+		"event_type":    event.Type(),
+		"event_version": event.SpecVersion(),
+		"namespace":     event.Source(),
+		"object_type":   "", // Not present in CloudEvent, unless you want to add as extension
+		"object_id":     event.ID(),
+		"timestamp":     event.Time(),
 		"actor": map[string]interface{}{
-			"type": event.Actor.Type,
-			"id":   event.Actor.ID,
+			"type": actorType,
+			"id":   actorID,
 		},
 		"context": map[string]interface{}{
-			"request_id": event.Context.RequestID,
-			"trace_id":   event.Context.TraceID,
+			"request_id": contextRequestID,
+			"trace_id":   contextTraceID,
 		},
-		"payload": map[string]interface{}{
-			"before": event.Payload.Before,
-			"after":  event.Payload.After,
-		},
-		"nats_meta": map[string]interface{}{
-			"stream":      event.NATSMeta.Stream,
-			"sequence":    event.NATSMeta.Sequence,
-			"received_at": event.NATSMeta.ReceivedAt,
-		},
+		"payload": payloadMap,
+		// NATS metadata can be extracted from the NATS extension if needed
 	}
 
 	// Create environment with event as the root variable
@@ -166,9 +195,9 @@ func evaluateTriggerCriteria(event *event.Event, criteria string) (bool, error) 
 
 // FindMatchingTriggers finds all triggers that match the given event.
 // Returns an empty slice if no matching triggers are found.
-func FindMatchingTriggers(store TriggerStore, event *event.Event) ([]*Trigger, error) {
+func FindMatchingTriggers(store TriggerStore, event *cloudevents.Event) ([]*Trigger, error) {
 	// Get all potential triggers for the namespace (including wildcard matches)
-	triggers := store.GetTriggers(event.Namespace)
+	triggers := store.GetTriggers(event.Source())
 	if len(triggers) == 0 {
 		return nil, nil
 	}

@@ -13,6 +13,7 @@ import (
 	"mycelium/internal/trigger"
 
 	"github.com/nats-io/nats.go"
+	cloudevents "github.com/cloudevents/sdk-go/v2"
 )
 
 func main() {
@@ -48,7 +49,7 @@ func main() {
 	go store.Watch(ctx)
 
 	// Create event handler
-	handler := func(e *event.Event) error {
+	handler := func(e *cloudevents.Event) error {
 		matchedTriggers, err := trigger.FindMatchingTriggers(store, e)
 		if err != nil {
 			log.Printf("Error finding matching triggers: %v", err)
@@ -56,7 +57,7 @@ func main() {
 		}
 
 		if len(matchedTriggers) > 0 {
-			log.Printf("Event %s matched %d triggers:", e.EventID, len(matchedTriggers))
+			log.Printf("Event %s matched %d triggers:", e.ID, len(matchedTriggers))
 			for _, t := range matchedTriggers {
 				log.Printf("  - Trigger: %s", t.Name)
 				log.Printf("    Action: %s", t.Action)

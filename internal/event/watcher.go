@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	cloudevents "github.com/cloudevents/sdk-go/v2"
 )
 
 // WatcherConfig holds the configuration for the NATS event watcher
@@ -21,7 +22,7 @@ type WatcherConfig struct {
 }
 
 // EventHandler is a function type that processes events
-type EventHandler func(*Event) error
+type EventHandler func(*cloudevents.Event) error
 
 // Watcher represents a NATS event watcher
 type Watcher struct {
@@ -106,27 +107,22 @@ func (w *Watcher) Stop() {
 
 // handleMessage processes incoming NATS messages
 func (w *Watcher) handleMessage(msg *nats.Msg) {
-	// Parse the event
-	event := &Event{}
-	if err := event.UnmarshalJSON(msg.Data); err != nil {
-		log.Printf("Error unmarshaling event: %v", err)
+	// Parse the CloudEvent
+	ce := cloudevents.NewEvent()
+	if err := ce.UnmarshalJSON(msg.Data); err != nil {
+		log.Printf("Error unmarshaling CloudEvent: %v", err)
 		msg.Nak()
 		return
 	}
 
-	// Set NATS metadata
-	meta, err := msg.Metadata()
-	if err == nil {
-		event.SetNATSMeta(meta.Stream, int64(meta.Sequence.Stream))
-	}
+	// Optionally extract NATS metadata using the NATS extension if needed
+	// Optionally extract Actor and Context from extensions if needed
 
-	// Process the event
-	if err := w.handler(event); err != nil {
-		log.Printf("Error processing event: %v", err)
+	if err := w.handler(&ce); err != nil {
+		log.Printf("Error processing CloudEvent: %v", err)
 		msg.Nak()
 		return
 	}
 
-	// Acknowledge the message
 	msg.Ack()
 }
