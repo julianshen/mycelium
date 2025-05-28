@@ -52,7 +52,7 @@ func extractNamespaceFromType(eventType string) string {
 //
 // Expression-based matching evaluates a string expression against the event object.
 // The expression must evaluate to a boolean value.
-// Example: event.event_type == "user.created" && event.payload.after.role == "admin"
+// Example: event.event_type == "user.created" && event.data.after.role == "admin"
 //
 // See the event system specification for more details on the expression language.
 func MatchTrigger(trigger *Trigger, event *cloudevents.Event) (bool, error) {
@@ -114,13 +114,13 @@ func extractExtensions(event *cloudevents.Event) (string, string, string, string
 	return actorType, actorID, contextRequestID, contextTraceID
 }
 
-// Extract payload from Data
-func extractPayload(event *cloudevents.Event) (map[string]interface{}, error) {
-	var payload map[string]interface{}
-	if err := event.DataAs(&payload); err != nil {
-		payload = map[string]interface{}{}
+// Extract data from Data
+func extractData(event *cloudevents.Event) (map[string]interface{}, error) {
+	var data map[string]interface{}
+	if err := event.DataAs(&data); err != nil {
+		data = map[string]interface{}{}
 	}
-	return payload, nil
+	return data, nil
 }
 
 // EvaluateTriggerCriteria safely evaluates a criteria string against the given event
@@ -135,19 +135,19 @@ func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, e
 	// Extract extensions
 	actorType, actorID, contextRequestID, contextTraceID := extractExtensions(event)
 
-	// Extract payload from Data
-	payload, err := extractPayload(event)
+	// Extract data from Data
+	data, err := extractData(event)
 	if err != nil {
-		return false, fmt.Errorf("failed to extract payload: %w", err)
+		return false, fmt.Errorf("failed to extract data: %w", err)
 	}
 
 	// Only include 'before' and 'after' if present
-	payloadMap := map[string]interface{}{}
-	if before, ok := payload["before"]; ok {
-		payloadMap["before"] = before
+	dataMap := map[string]interface{}{}
+	if before, ok := data["before"]; ok {
+		dataMap["before"] = before
 	}
-	if after, ok := payload["after"]; ok {
-		payloadMap["after"] = after
+	if after, ok := data["after"]; ok {
+		dataMap["after"] = after
 	}
 
 	// Create a map representation of the event that matches JSON field names
@@ -167,7 +167,7 @@ func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, e
 			"request_id": contextRequestID,
 			"trace_id":   contextTraceID,
 		},
-		"payload": payloadMap,
+		"data": dataMap,
 		// NATS metadata can be extracted from the NATS extension if needed
 	}
 
