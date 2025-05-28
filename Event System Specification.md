@@ -101,14 +101,15 @@ event.<namespace>.<objecttype>.<type>
 ---
 
 ## Event Type Conventions
+The format should be "$namespace.object.{command|event}"
 
-| Event Type | Description |
-| --- | --- |
-| `object.created` | New entity created |
-| `object.updated` | Entity updated |
-| `object.deleted` | Entity deleted |
-| `object.status_changed` | Status field changed |
-| `object.<action>` | Domain-specific action (e.g., `user.logged_in`) |
+| Event Type | Description | Example |
+| --- | --- | --- |
+| `object.created` | New entity created | `core.user.created` |
+| `object.updated` | Entity updated | `core.user.updated` |
+| `object.deleted` | Entity deleted | `core.user.deleted` |
+| `object.status_changed` | Status field changed | `core.user.status_changed` |
+| `object.<action>` | Domain-specific action | `core.user.logged_in` |
 
 ---
 

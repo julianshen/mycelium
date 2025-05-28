@@ -37,6 +37,15 @@ func isNamespaceMatch(trigger *Trigger, eventNamespace string) bool {
 	return false
 }
 
+// extractNamespaceFromType extracts namespace from event type in format "$namespace.object.{command|event}"
+func extractNamespaceFromType(eventType string) string {
+	parts := strings.Split(eventType, ".")
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+	return ""
+}
+
 // MatchTrigger returns true if the event satisfies the trigger's criteria.
 // It supports:
 // Expression-based matching using the expr library (preferred)
@@ -54,7 +63,7 @@ func MatchTrigger(trigger *Trigger, event *cloudevents.Event) (bool, error) {
 	// If criteria is empty, match based on event type and namespace
 	if trigger.Criteria == "" {
 		return (trigger.EventType == "" || trigger.EventType == event.Type()) &&
-			isNamespaceMatch(trigger, event.Source()) &&
+			isNamespaceMatch(trigger, extractNamespaceFromType(event.Type())) &&
 			(trigger.ObjectType == "" || trigger.ObjectType == ""), nil
 	}
 
@@ -146,7 +155,7 @@ func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, e
 		"event_id":      event.ID(),
 		"event_type":    event.Type(),
 		"event_version": event.SpecVersion(),
-		"namespace":     event.Source(),
+		"namespace":     extractNamespaceFromType(event.Type()),
 		"object_type":   "", // Not present in CloudEvent, unless you want to add as extension
 		"object_id":     event.ID(),
 		"timestamp":     event.Time(),
@@ -196,8 +205,11 @@ func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, e
 // FindMatchingTriggers finds all triggers that match the given event.
 // Returns an empty slice if no matching triggers are found.
 func FindMatchingTriggers(store TriggerStore, event *cloudevents.Event) ([]*Trigger, error) {
+	// Get namespace from event type instead of source
+	namespace := extractNamespaceFromType(event.Type())
+	
 	// Get all potential triggers for the namespace (including wildcard matches)
-	triggers := store.GetTriggers(event.Source())
+	triggers := store.GetTriggers(namespace)
 	if len(triggers) == 0 {
 		return nil, nil
 	}
