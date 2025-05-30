@@ -12,8 +12,8 @@ import (
 	"mycelium/internal/event"
 	"mycelium/internal/trigger"
 
-	"github.com/nats-io/nats.go"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/nats-io/nats.go"
 )
 
 func main() {
@@ -57,7 +57,7 @@ func main() {
 		}
 
 		if len(matchedTriggers) > 0 {
-			log.Printf("Event %s matched %d triggers:", e.ID, len(matchedTriggers))
+			log.Printf("Event %s matched %d triggers:", e.ID(), len(matchedTriggers))
 			for _, t := range matchedTriggers {
 				log.Printf("  - Trigger: %s", t.Name)
 				log.Printf("    Action: %s", t.Action)

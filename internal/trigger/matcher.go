@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/expr-lang/expr"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/expr-lang/expr"
 )
 
 var (
@@ -64,7 +64,7 @@ func MatchTrigger(trigger *Trigger, event *cloudevents.Event) (bool, error) {
 	if trigger.Criteria == "" {
 		return (trigger.EventType == "" || trigger.EventType == event.Type()) &&
 			isNamespaceMatch(trigger, extractNamespaceFromType(event.Type())) &&
-			(trigger.ObjectType == "" || trigger.ObjectType == ""), nil
+			(trigger.ObjectType == "" || trigger.ObjectType == event.Type()), nil
 	}
 
 	// If the trigger has a criteria expression, evaluate it
@@ -207,7 +207,7 @@ func evaluateTriggerCriteria(event *cloudevents.Event, criteria string) (bool, e
 func FindMatchingTriggers(store TriggerStore, event *cloudevents.Event) ([]*Trigger, error) {
 	// Get namespace from event type instead of source
 	namespace := extractNamespaceFromType(event.Type())
-	
+
 	// Get all potential triggers for the namespace (including wildcard matches)
 	triggers := store.GetTriggers(namespace)
 	if len(triggers) == 0 {
