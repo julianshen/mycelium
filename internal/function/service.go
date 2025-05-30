@@ -13,20 +13,20 @@ import (
 
 // Service handles function execution through NATS
 type Service struct {
-	nc      *nats.Conn
-	js      jetstream.JetStream
-	kv      jetstream.KeyValue
-	store   jetstream.ObjectStore
+	nc       *nats.Conn
+	js       jetstream.JetStream
+	kv       jetstream.KeyValue
+	store    jetstream.ObjectStore
 	registry *Registry
 }
 
 // NewService creates a new function service
 func NewService(nc *nats.Conn, js jetstream.JetStream, kv jetstream.KeyValue, store jetstream.ObjectStore) *Service {
 	return &Service{
-		nc:      nc,
-		js:      js,
-		kv:      kv,
-		store:   store,
+		nc:       nc,
+		js:       js,
+		kv:       kv,
+		store:    store,
 		registry: NewRegistry(),
 	}
 }
@@ -38,14 +38,24 @@ func (s *Service) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to subscribe to function calls: %w", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() {
+		if err := sub.Unsubscribe(); err != nil {
+			// Log the error but don't return it since this is in a defer
+			fmt.Printf("Error unsubscribing: %v\n", err)
+		}
+	}()
 
 	// Watch for function updates in KV store
 	watch, err := s.kv.Watch(ctx, "function.*")
 	if err != nil {
 		return fmt.Errorf("failed to watch function updates: %w", err)
 	}
-	defer watch.Stop()
+	defer func() {
+		if err := watch.Stop(); err != nil {
+			// Log the error but don't return it since this is in a defer
+			fmt.Printf("Error stopping watch: %v\n", err)
+		}
+	}()
 
 	for {
 		select {
@@ -70,8 +80,8 @@ func (s *Service) Start(ctx context.Context) error {
 // handleFunctionCall processes incoming function calls
 func (s *Service) handleFunctionCall(msg *nats.Msg) {
 	var call struct {
-		Name  string      `json:"name"`
-		Event *ce.Event   `json:"event"`
+		Name  string    `json:"name"`
+		Event *ce.Event `json:"event"`
 	}
 
 	data := msg.Data
@@ -128,5 +138,7 @@ func (s *Service) publishError(reply string, err error) {
 		Error: err.Error(),
 	}
 	data, _ := json.Marshal(response)
-	s.nc.Publish(reply, data)
-} 
+	if err := s.nc.Publish(reply, data); err != nil {
+		fmt.Printf("Error publishing error response: %v\n", err)
+	}
+}

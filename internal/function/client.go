@@ -29,8 +29,8 @@ func NewClient(nc *nats.Conn, js jetstream.JetStream) *Client {
 func (c *Client) CallFunction(ctx context.Context, name string, event *ce.Event) (FunctionResult, error) {
 	// Create request
 	request := struct {
-		Name  string      `json:"name"`
-		Event *ce.Event   `json:"event"`
+		Name  string    `json:"name"`
+		Event *ce.Event `json:"event"`
 	}{
 		Name:  name,
 		Event: event,
@@ -49,7 +49,12 @@ func (c *Client) CallFunction(ctx context.Context, name string, event *ce.Event)
 	if err != nil {
 		return FunctionResult{}, fmt.Errorf("failed to subscribe to reply: %w", err)
 	}
-	defer sub.Unsubscribe()
+	defer func() {
+		if err := sub.Unsubscribe(); err != nil {
+			// Log the error but don't return it since this is in a defer
+			fmt.Printf("Error unsubscribing: %v\n", err)
+		}
+	}()
 
 	// Publish the request
 	if err := c.nc.PublishRequest("function.call", reply, data); err != nil {
@@ -79,4 +84,4 @@ func (c *Client) CallFunctionWithTimeout(name string, event *ce.Event, timeout t
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	return c.CallFunction(ctx, name, event)
-} 
+}

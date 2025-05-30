@@ -5,8 +5,8 @@ import (
 	"flag"
 	"log"
 
-	"github.com/nats-io/nats.go"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/nats-io/nats.go"
 )
 
 func main() {
@@ -59,7 +59,7 @@ func emitConfigUpdate(ctx context.Context, js nats.JetStreamContext) {
 	ce.SetExtension("actor_id", "test-user")
 	ce.SetExtension("context_request_id", "test-req-1")
 	ce.SetExtension("context_trace_id", "test-trace-1")
-	ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
+	if err := ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
 		"before": map[string]interface{}{
 			"critical": false,
 			"value":    "old-value",
@@ -68,7 +68,10 @@ func emitConfigUpdate(ctx context.Context, js nats.JetStreamContext) {
 			"critical": true,
 			"value":    "new-value",
 		},
-	})
+	}); err != nil {
+		log.Printf("Failed to set config CloudEvent data: %v", err)
+		return
+	}
 
 	data, err := ce.MarshalJSON()
 	if err != nil {
@@ -94,7 +97,7 @@ func emitUserRoleChange(ctx context.Context, js nats.JetStreamContext) {
 	ce.SetExtension("actor_id", "admin-user")
 	ce.SetExtension("context_request_id", "test-req-2")
 	ce.SetExtension("context_trace_id", "test-trace-2")
-	ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
+	if err := ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
 		"before": map[string]interface{}{
 			"role": "user",
 			"name": "Test User",
@@ -103,7 +106,10 @@ func emitUserRoleChange(ctx context.Context, js nats.JetStreamContext) {
 			"role": "admin",
 			"name": "Test User",
 		},
-	})
+	}); err != nil {
+		log.Printf("Failed to set user CloudEvent data: %v", err)
+		return
+	}
 
 	data, err := ce.MarshalJSON()
 	if err != nil {
@@ -129,7 +135,7 @@ func emitResourceUsage(ctx context.Context, js nats.JetStreamContext) {
 	ce.SetExtension("actor_id", "monitor")
 	ce.SetExtension("context_request_id", "test-req-3")
 	ce.SetExtension("context_trace_id", "test-trace-3")
-	ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
+	if err := ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
 		"before": map[string]interface{}{
 			"usage": 75.5,
 			"type":  "cpu",
@@ -138,7 +144,10 @@ func emitResourceUsage(ctx context.Context, js nats.JetStreamContext) {
 			"usage": 95.2,
 			"type":  "cpu",
 		},
-	})
+	}); err != nil {
+		log.Printf("Failed to set resource CloudEvent data: %v", err)
+		return
+	}
 
 	data, err := ce.MarshalJSON()
 	if err != nil {
@@ -164,7 +173,7 @@ func emitSecurityAlert(ctx context.Context, js nats.JetStreamContext) {
 	ce.SetExtension("actor_id", "security-scanner")
 	ce.SetExtension("context_request_id", "test-req-4")
 	ce.SetExtension("context_trace_id", "test-trace-4")
-	ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
+	if err := ce.SetData(cloudevents.ApplicationJSON, map[string]interface{}{
 		"before": map[string]interface{}{
 			"severity": "low",
 			"status":   "investigating",
@@ -175,7 +184,10 @@ func emitSecurityAlert(ctx context.Context, js nats.JetStreamContext) {
 			"source_ip":   "192.168.1.100",
 			"attack_type": "brute_force",
 		},
-	})
+	}); err != nil {
+		log.Printf("Failed to set security CloudEvent data: %v", err)
+		return
+	}
 
 	data, err := ce.MarshalJSON()
 	if err != nil {

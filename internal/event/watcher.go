@@ -6,8 +6,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	cloudevents "github.com/cloudevents/sdk-go/v2"
+	"github.com/nats-io/nats.go"
 )
 
 // WatcherConfig holds the configuration for the NATS event watcher
@@ -98,7 +98,9 @@ func (w *Watcher) Start(ctx context.Context) error {
 // Stop stops watching for events
 func (w *Watcher) Stop() {
 	if w.sub != nil {
-		w.sub.Unsubscribe()
+		if err := w.sub.Unsubscribe(); err != nil {
+			log.Printf("Error unsubscribing: %v", err)
+		}
 	}
 	if w.conn != nil {
 		w.conn.Close()
@@ -111,7 +113,9 @@ func (w *Watcher) handleMessage(msg *nats.Msg) {
 	ce := cloudevents.NewEvent()
 	if err := ce.UnmarshalJSON(msg.Data); err != nil {
 		log.Printf("Error unmarshaling CloudEvent: %v", err)
-		msg.Nak()
+		if err := msg.Nak(); err != nil {
+			log.Printf("Error sending NAK: %v", err)
+		}
 		return
 	}
 
@@ -120,9 +124,13 @@ func (w *Watcher) handleMessage(msg *nats.Msg) {
 
 	if err := w.handler(&ce); err != nil {
 		log.Printf("Error processing CloudEvent: %v", err)
-		msg.Nak()
+		if err := msg.Nak(); err != nil {
+			log.Printf("Error sending NAK: %v", err)
+		}
 		return
 	}
 
-	msg.Ack()
+	if err := msg.Ack(); err != nil {
+		log.Printf("Error sending ACK: %v", err)
+	}
 }
