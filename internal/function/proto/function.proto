@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package function;
+
+option go_package = "github.com/julianshen/mycelium/internal/function/proto";
+
+import "google/protobuf/timestamp.proto";
+
+// FunctionService provides methods for executing functions
+service FunctionService {
+  // ExecuteFunction executes a function with the given event
+  rpc ExecuteFunction(ExecuteFunctionRequest) returns (ExecuteFunctionResponse) {}
+}
+
+// ExecuteFunctionRequest represents a request to execute a function
+message ExecuteFunctionRequest {
+  string name = 1;
+  CloudEvent event = 2;
+}
+
+// ExecuteFunctionResponse represents the response from a function execution
+message ExecuteFunctionResponse {
+  oneof result {
+    string error = 1;
+    bytes data = 2;
+  }
+}
+
+// CloudEvent represents a CloudEvents event
+message CloudEvent {
+  string id = 1;
+  string source = 2;
+  string spec_version = 3;
+  string type = 4;
+  google.protobuf.Timestamp time = 5;
+  string data_content_type = 6;
+  string data_schema = 7;
+  string subject = 8;
+  bytes data = 9;
+  map<string, string> extensions = 10;
+} 

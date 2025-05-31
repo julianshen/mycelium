@@ -8,80 +8,82 @@ import (
 
 	ce "github.com/cloudevents/sdk-go/v2"
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
-// Client is used to call functions
+// Client represents a function client that communicates with NATS Service API
 type Client struct {
-	nc *nats.Conn
-	js jetstream.JetStream
+	nc       *nats.Conn
+	registry Registry
+	timeout  time.Duration
+}
+
+// ClientConfig holds the configuration for the client
+type ClientConfig struct {
+	NATSURL  string
+	Registry Registry
+	Timeout  time.Duration
 }
 
 // NewClient creates a new function client
-func NewClient(nc *nats.Conn, js jetstream.JetStream) *Client {
+func NewClient(cfg ClientConfig) (*Client, error) {
+	nc, err := nats.Connect(cfg.NATSURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to NATS: %w", err)
+	}
+
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
+	}
+
 	return &Client{
-		nc: nc,
-		js: js,
-	}
+		nc:       nc,
+		registry: cfg.Registry,
+		timeout:  cfg.Timeout,
+	}, nil
 }
 
-// CallFunction calls a function by name with the given event
-func (c *Client) CallFunction(ctx context.Context, name string, event *ce.Event) (FunctionResult, error) {
+// InvokeFunction invokes a function with the given event using NATS Service API
+func (c *Client) InvokeFunction(ctx context.Context, name string, event *ce.Event) ([]*ce.Event, error) {
 	// Create request
-	request := struct {
-		Name  string    `json:"name"`
-		Event *ce.Event `json:"event"`
+	req := struct {
+		FunctionName string    `json:"functionName"`
+		Event        *ce.Event `json:"event"`
 	}{
-		Name:  name,
-		Event: event,
+		FunctionName: name,
+		Event:        event,
 	}
 
-	data, err := json.Marshal(request)
+	reqData, err := json.Marshal(req)
 	if err != nil {
-		return FunctionResult{}, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create a reply subject
-	reply := fmt.Sprintf("function.reply.%s", nats.NewInbox())
-
-	// Create a subscription for the reply
-	sub, err := c.nc.SubscribeSync(reply)
+	// Use NATS Service API endpoint subject for function invocation
+	// The service listens on "function.invoke" as defined in the service
+	responseMsg, err := c.nc.RequestWithContext(ctx, "function.invoke", reqData)
 	if err != nil {
-		return FunctionResult{}, fmt.Errorf("failed to subscribe to reply: %w", err)
-	}
-	defer func() {
-		if err := sub.Unsubscribe(); err != nil {
-			// Log the error but don't return it since this is in a defer
-			fmt.Printf("Error unsubscribing: %v\n", err)
-		}
-	}()
-
-	// Publish the request
-	if err := c.nc.PublishRequest("function.call", reply, data); err != nil {
-		return FunctionResult{}, fmt.Errorf("failed to publish request: %w", err)
+		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 
-	// Wait for reply with timeout
-	msg, err := sub.NextMsgWithContext(ctx)
-	if err != nil {
-		return FunctionResult{}, fmt.Errorf("failed to receive reply: %w", err)
+	// Parse response
+	var resp struct {
+		Events    []*ce.Event `json:"events,omitempty"`
+		Error     string      `json:"error,omitempty"`
+		ErrorType string      `json:"errorType,omitempty"`
 	}
 
-	var result FunctionResult
-	if err := json.Unmarshal(msg.Data, &result); err != nil {
-		return FunctionResult{}, fmt.Errorf("failed to unmarshal reply: %w", err)
+	if err := json.Unmarshal(responseMsg.Data, &resp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
 
-	if result.Error != "" {
-		return result, fmt.Errorf("function error: %s", result.Error)
+	if resp.Error != "" {
+		return nil, fmt.Errorf("function error (%s): %s", resp.ErrorType, resp.Error)
 	}
 
-	return result, nil
+	return resp.Events, nil
 }
 
-// CallFunctionWithTimeout calls a function with a timeout
-func (c *Client) CallFunctionWithTimeout(name string, event *ce.Event, timeout time.Duration) (FunctionResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return c.CallFunction(ctx, name, event)
+// Close closes the client
+func (c *Client) Close() {
+	c.nc.Close()
 }

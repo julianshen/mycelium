@@ -2,82 +2,132 @@ package function
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"sync"
 
-	"github.com/cloudevents/sdk-go/v2/event"
-	"github.com/hashicorp/go-plugin"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
-// Registry manages function plugins
-type Registry struct {
-	mu       sync.RWMutex
-	plugins  map[string]*plugin.Client
-	functions map[string]Function
+// NATSRegistry implements the Registry interface using NATS
+type NATSRegistry struct {
+	nc          *nats.Conn
+	js          jetstream.JetStream
+	kv          jetstream.KeyValue
+	objectStore jetstream.ObjectStore
 }
 
-// NewRegistry creates a new function registry
-func NewRegistry() *Registry {
-	return &Registry{
-		plugins:   make(map[string]*plugin.Client),
-		functions: make(map[string]Function),
-	}
-}
-
-// RegisterPlugin registers a new function plugin
-func (r *Registry) RegisterPlugin(name string, client *plugin.Client) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	// Get the plugin instance
-	raw, err := client.Client()
+// NewNATSRegistry creates a new NATS registry
+func NewNATSRegistry(nc *nats.Conn) (*NATSRegistry, error) {
+	js, err := jetstream.New(nc)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to create jetstream: %w", err)
 	}
 
-	function, ok := raw.(Function)
-	if !ok {
-		return fmt.Errorf("plugin does not implement Function interface")
+	// Create or get the KV bucket
+	kv, err := js.CreateKeyValue(context.Background(), jetstream.KeyValueConfig{
+		Bucket: "functions",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create KV bucket: %w", err)
 	}
 
-	r.plugins[name] = client
-	r.functions[name] = function
+	// Create or get the object store bucket
+	objectStore, err := js.CreateObjectStore(context.Background(), jetstream.ObjectStoreConfig{
+		Bucket: "function-binaries",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create object store: %w", err)
+	}
+
+	return &NATSRegistry{
+		nc:          nc,
+		js:          js,
+		kv:          kv,
+		objectStore: objectStore,
+	}, nil
+}
+
+// StoreFunction stores a function's metadata and binary
+func (r *NATSRegistry) StoreFunction(meta FunctionMeta, binary []byte) error {
+	// Store the metadata
+	metaData, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	_, err = r.kv.Put(context.Background(), meta.Name, metaData)
+	if err != nil {
+		return fmt.Errorf("failed to store metadata: %w", err)
+	}
+
+	// Store the binary
+	_, err = r.objectStore.PutBytes(context.Background(), meta.Name, binary)
+	if err != nil {
+		return fmt.Errorf("failed to store binary: %w", err)
+	}
+
 	return nil
 }
 
-// UnregisterPlugin removes a function plugin
-func (r *Registry) UnregisterPlugin(name string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if client, exists := r.plugins[name]; exists {
-		client.Kill()
-		delete(r.plugins, name)
-		delete(r.functions, name)
+// GetFunction retrieves a function's metadata and binary
+func (r *NATSRegistry) GetFunction(name string) (FunctionMeta, []byte, error) {
+	// Get the metadata
+	entry, err := r.kv.Get(context.Background(), name)
+	if err != nil {
+		return FunctionMeta{}, nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
+
+	var meta FunctionMeta
+	if err := json.Unmarshal(entry.Value(), &meta); err != nil {
+		return FunctionMeta{}, nil, fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+
+	// Get the binary
+	binary, err := r.objectStore.GetBytes(context.Background(), name)
+	if err != nil {
+		return FunctionMeta{}, nil, fmt.Errorf("failed to get binary: %w", err)
+	}
+
+	return meta, binary, nil
 }
 
-// ExecuteFunction executes a function by name
-func (r *Registry) ExecuteFunction(ctx context.Context, name string, event *event.Event) (FunctionResult, error) {
-	r.mu.RLock()
-	function, exists := r.functions[name]
-	r.mu.RUnlock()
-
-	if !exists {
-		return FunctionResult{}, fmt.Errorf("function %s not found", name)
+// ListFunctions returns a list of all available functions
+func (r *NATSRegistry) ListFunctions() ([]FunctionMeta, error) {
+	keys, err := r.kv.Keys(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to list functions: %w", err)
 	}
 
-	return function.Execute(ctx, event)
+	var functions []FunctionMeta
+	for _, key := range keys {
+		entry, err := r.kv.Get(context.Background(), key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get function %s: %w", key, err)
+		}
+
+		var meta FunctionMeta
+		if err := json.Unmarshal(entry.Value(), &meta); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal function %s: %w", key, err)
+		}
+
+		functions = append(functions, meta)
+	}
+
+	return functions, nil
 }
 
-// Close closes all registered plugins
-func (r *Registry) Close() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	for _, client := range r.plugins {
-		client.Kill()
+// DeleteFunction removes a function
+func (r *NATSRegistry) DeleteFunction(name string) error {
+	// Delete the metadata
+	if err := r.kv.Delete(context.Background(), name); err != nil {
+		return fmt.Errorf("failed to delete metadata: %w", err)
 	}
-	r.plugins = make(map[string]*plugin.Client)
-	r.functions = make(map[string]Function)
-} 
+
+	// Delete the binary
+	if err := r.objectStore.Delete(context.Background(), name); err != nil {
+		return fmt.Errorf("failed to delete binary: %w", err)
+	}
+
+	return nil
+}
